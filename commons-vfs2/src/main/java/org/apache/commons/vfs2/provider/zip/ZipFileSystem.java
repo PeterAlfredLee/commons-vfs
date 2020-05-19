@@ -19,15 +19,15 @@ package org.apache.commons.vfs2.provider.zip;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
+import org.apache.commons.compress.archivers.zip.ZipFile;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.vfs2.Capability;
@@ -42,7 +42,7 @@ import org.apache.commons.vfs2.provider.AbstractFileSystem;
 import org.apache.commons.vfs2.provider.UriParser;
 
 /**
- * A read-only file system for ZIP and JAR files.
+ * A read-only file system for ZIP files.
  */
 public class ZipFileSystem extends AbstractFileSystem {
 
@@ -79,10 +79,10 @@ public class ZipFileSystem extends AbstractFileSystem {
 
         try {
             // Build the index
-            final List<ZipFileObject> strongRef = new ArrayList<>(getZipFile().size());
-            final Enumeration<? extends ZipEntry> entries = getZipFile().entries();
+            final List<ZipFileObject> strongRef = new LinkedList<>();
+            final Enumeration<ZipArchiveEntry> entries = getZipFile().getEntries();
             while (entries.hasMoreElements()) {
-                final ZipEntry entry = entries.nextElement();
+                final ZipArchiveEntry entry = entries.nextElement();
                 final AbstractFileName name = (AbstractFileName) getFileSystemManager().resolveName(getRootName(),
                         UriParser.encode(entry.getName()));
 
@@ -131,14 +131,14 @@ public class ZipFileSystem extends AbstractFileSystem {
         return zipFile;
     }
 
-    protected ZipFileObject createZipFileObject(final AbstractFileName name, final ZipEntry entry)
+    protected ZipFileObject createZipFileObject(final AbstractFileName name, final ZipArchiveEntry entry)
             throws FileSystemException {
         return new ZipFileObject(name, entry, this, true);
     }
 
     protected ZipFile createZipFile(final File file) throws FileSystemException {
         try {
-            return charset == null ? new ZipFile(file) : new ZipFile(file, charset);
+            return charset == null ? new ZipFile(file) : new ZipFile(file, charset.toString());
         } catch (final IOException ioe) {
             throw new FileSystemException("vfs.provider.zip/open-zip-file.error", file, ioe);
         }

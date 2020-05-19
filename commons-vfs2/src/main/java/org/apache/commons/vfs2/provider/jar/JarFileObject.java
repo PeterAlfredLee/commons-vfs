@@ -17,37 +17,49 @@
 package org.apache.commons.vfs2.provider.jar;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.security.cert.Certificate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
-import java.util.jar.JarFile;
 import java.util.jar.Manifest;
-import java.util.zip.ZipEntry;
 
+import org.apache.commons.vfs2.FileName;
 import org.apache.commons.vfs2.FileSystemException;
+import org.apache.commons.vfs2.FileType;
 import org.apache.commons.vfs2.provider.AbstractFileName;
-import org.apache.commons.vfs2.provider.zip.ZipFileObject;
+import org.apache.commons.vfs2.provider.AbstractFileObject;
+
 
 /**
  * A file in a Jar file system.
  */
-public class JarFileObject extends ZipFileObject {
+public class JarFileObject extends AbstractFileObject<JarFileSystem> {
+
+    /** The JarEntry. */
+    protected JarEntry entry;
+    private final HashSet<String> children = new HashSet<>();
+    private FileType type;
 
     private final JarFileSystem fs;
 
     private Attributes attributes;
 
-    protected JarFileObject(final AbstractFileName name, final ZipEntry entry, final JarFileSystem fs,
-            final boolean zipExists) throws FileSystemException {
-        super(name, entry, fs, zipExists);
+    protected JarFileObject(final AbstractFileName name, final JarEntry entry, final JarFileSystem fs,
+            final boolean jarExists) throws FileSystemException {
+        super(name, fs);
+        setJarEntry(entry);
+        if (!jarExists) {
+            type = FileType.IMAGINARY;
+        }
         if (entry != null) {
 			// For Java 9 and up: Force the certificates to be read and cached now. This avoids an
 			// IllegalStateException in java.util.jar.JarFile.isMultiRelease() when it tries
 			// to read the certificates and the file is closed.
-        	((JarEntry) entry).getCertificates();
+            entry.getCertificates();
         }
         this.fs = fs;
 
@@ -59,14 +71,143 @@ public class JarFileObject extends ZipFileObject {
     }
 
     /**
+     * Sets the details for this file object.
+     *
+     * @param entry JAR information related to this file.
+     * @since 2.7.0
+     */
+    protected void setJarEntry(final JarEntry entry) {
+        if (this.entry != null) {
+            return;
+        }
+
+        if (entry == null || entry.isDirectory()) {
+            type = FileType.FOLDER;
+        } else {
+            type = FileType.FILE;
+        }
+
+        this.entry = entry;
+    }
+
+    /**
+     * Attaches a child.
+     * <p>
+     * TODO: Shouldn't this method have package-only visibility? Cannot change this without breaking binary
+     * compatibility.
+     * </p>
+     *
+     * @param childName The name of the child.
+     * @since 2.7.0
+     */
+    public void attachChild(final FileName childName) {
+        children.add(childName.getBaseName());
+    }
+
+    /**
+     * Determines if this file can be written to.
+     *
+     * @return {@code true} if this file is writable, {@code false} if not.
+     * @throws FileSystemException if an error occurs.
+     * @since 2.7.0
+     */
+    @Override
+    public boolean isWriteable() throws FileSystemException {
+        return false;
+    }
+
+    /**
+     * Returns the file's type.
+     * @since 2.7.0
+     */
+    @Override
+    protected FileType doGetType() {
+        return type;
+    }
+
+    /**
+     * Lists the children of the file.
+     * @since 2.7.0
+     */
+    @Override
+    protected String[] doListChildren() {
+        try {
+            if (!getType().hasChildren()) {
+                return null;
+            }
+        } catch (final FileSystemException e) {
+            // should not happen as the type has already been cached.
+            throw new RuntimeException(e);
+        }
+
+        return children.toArray(new String[children.size()]);
+    }
+
+    /**
+     * Returns the size of the file content (in bytes). Is only called if {@link #doGetType} returns
+     * {@link FileType#FILE}.
+     * @since 2.7.0
+     */
+    @Override
+    protected long doGetContentSize() {
+        return entry.getSize();
+    }
+
+    /**
+     * Returns the last modified time of this file.
+     * @since 2.7.0
+     */
+    @Override
+    protected long doGetLastModifiedTime() throws Exception {
+        return entry.getTime();
+    }
+
+    /**
+     * Creates an input stream to read the file content from. Is only called if {@link #doGetType} returns
+     * {@link FileType#FILE}. The input stream returned by this method is guaranteed to be closed before this method is
+     * called again.
+     * @since 2.7.0
+     */
+    @Override
+    protected InputStream doGetInputStream(final int bufferSize) throws Exception {
+        // VFS-210: zip allows to gather an input stream even from a directory and will
+        // return -1 on the first read. getType should not be expensive and keeps the tests
+        // running
+        if (!getType().hasContent()) {
+            throw new FileSystemException("vfs.provider/read-not-file.error", getName());
+        }
+
+        return getAbstractFileSystem().getJarFile().getInputStream(entry);
+    }
+
+    /**
+    * @since 2.7.0
+    */
+    @Override
+    protected void doAttach() throws Exception {
+        getAbstractFileSystem().getJarFile();
+    }
+
+    /**
+     * @since 2.7.0
+     */
+    @Override
+    protected void doDetach() throws Exception {
+        final JarFileSystem afs = getAbstractFileSystem();
+        if (!afs.isOpen()) {
+            afs.close();
+        }
+    }
+
+    /**
      * Returns the Jar manifest.
      */
     Manifest getManifest() throws IOException {
-        if (fs.getZipFile() == null) {
+        if (fs.getJarFile() == null) {
             return null;
         }
 
-        return ((JarFile) fs.getZipFile()).getManifest();
+        return fs.getJarFile().getManifest();
     }
 
     /**

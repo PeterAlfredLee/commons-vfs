@@ -18,8 +18,8 @@ package org.apache.commons.vfs2.provider.zip;
 
 import java.io.InputStream;
 import java.util.HashSet;
-import java.util.zip.ZipEntry;
 
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.vfs2.FileName;
 import org.apache.commons.vfs2.FileSystemException;
 import org.apache.commons.vfs2.FileType;
@@ -32,11 +32,11 @@ import org.apache.commons.vfs2.provider.AbstractFileObject;
 public class ZipFileObject extends AbstractFileObject<ZipFileSystem> {
 
     /** The ZipEntry. */
-    protected ZipEntry entry;
+    protected ZipArchiveEntry entry;
     private final HashSet<String> children = new HashSet<>();
     private FileType type;
 
-    protected ZipFileObject(final AbstractFileName name, final ZipEntry entry, final ZipFileSystem fs,
+    protected ZipFileObject(final AbstractFileName name, final ZipArchiveEntry entry, final ZipFileSystem fs,
             final boolean zipExists) throws FileSystemException {
         super(name, fs);
         setZipEntry(entry);
@@ -50,7 +50,7 @@ public class ZipFileObject extends AbstractFileObject<ZipFileSystem> {
      *
      * @param entry ZIP information related to this file.
      */
-    protected void setZipEntry(final ZipEntry entry) {
+    protected void setZipEntry(final ZipArchiveEntry entry) {
         if (this.entry != null) {
             return;
         }

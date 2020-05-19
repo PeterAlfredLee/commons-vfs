@@ -18,41 +18,135 @@ package org.apache.commons.vfs2.provider.jar;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.jar.Attributes;
 import java.util.jar.Attributes.Name;
+import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.Manifest;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipFile;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.commons.vfs2.Capability;
+import org.apache.commons.vfs2.FileName;
 import org.apache.commons.vfs2.FileObject;
 import org.apache.commons.vfs2.FileSystemException;
 import org.apache.commons.vfs2.FileSystemOptions;
+import org.apache.commons.vfs2.Selectors;
+import org.apache.commons.vfs2.VfsLog;
 import org.apache.commons.vfs2.provider.AbstractFileName;
-import org.apache.commons.vfs2.provider.zip.ZipFileObject;
-import org.apache.commons.vfs2.provider.zip.ZipFileSystem;
+import org.apache.commons.vfs2.provider.AbstractFileSystem;
+import org.apache.commons.vfs2.provider.UriParser;
+import org.apache.commons.vfs2.provider.zip.ZipFileSystemConfigBuilder;
 
 /**
  * A read-only file system for Jar files.
  */
-public class JarFileSystem extends ZipFileSystem {
+public class JarFileSystem extends AbstractFileSystem {
+
+    private static final Log LOG = LogFactory.getLog(JarFileSystem.class);
+
+    private final File file;
+    private final Charset charset;
+    private JarFile jarFile;
+
+    /**
+     * Cache doesn't need to be synchronized since it is read-only.
+     */
+    private final Map<FileName, FileObject> cache = new HashMap<>();
+
     private Attributes attributes;
 
-    protected JarFileSystem(final AbstractFileName rootName, final FileObject file,
+    protected JarFileSystem(final AbstractFileName rootName, final FileObject parentLayer,
             final FileSystemOptions fileSystemOptions) throws FileSystemException {
-        super(rootName, file, fileSystemOptions);
+        super(rootName, parentLayer, fileSystemOptions);
+
+        // Make a local copy of the file
+        file = parentLayer.getFileSystem().replicateFile(parentLayer, Selectors.SELECT_SELF);
+        this.charset = ZipFileSystemConfigBuilder.getInstance().getCharset(fileSystemOptions);
+
+        // Open the jar file
+        if (!file.exists()) {
+            // Don't need to do anything
+            jarFile = null;
+            return;
+        }
     }
 
-    // @Override
-    // protected FileObject createFile(AbstractFileName name) throws FileSystemException
-    // {
-    // return new JarFileObject(name, null, this, false);
-    // }
-
+    /**
+     * @since 2.7.0
+     */
     @Override
-    protected ZipFile createZipFile(final File file) throws FileSystemException {
+    public void init() throws FileSystemException {
+        super.init();
+
+        try {
+            // Build the index
+            final List<JarFileObject> strongRef = new ArrayList<>(getJarFile().size());
+            final Enumeration<JarEntry> entries = getJarFile().entries();
+            while (entries.hasMoreElements()) {
+                final JarEntry entry = entries.nextElement();
+                final AbstractFileName name = (AbstractFileName) getFileSystemManager().resolveName(getRootName(),
+                        UriParser.encode(entry.getName()));
+
+                // Create the file
+                JarFileObject fileObj;
+                if (entry.isDirectory() && getFileFromCache(name) != null) {
+                    fileObj = (JarFileObject) getFileFromCache(name);
+                    fileObj.setJarEntry(entry);
+                    continue;
+                }
+
+                fileObj = createJarFileObject(name, entry);
+                putFileToCache(fileObj);
+                strongRef.add(fileObj);
+                fileObj.holdObject(strongRef);
+
+                // Make sure all ancestors exist
+                // TODO - create these on demand
+                JarFileObject parent;
+                for (AbstractFileName parentName = (AbstractFileName) name.getParent();
+                     parentName != null;
+                     fileObj = parent, parentName = (AbstractFileName) parentName.getParent()) {
+                    // Locate the parent
+                    parent = (JarFileObject) getFileFromCache(parentName);
+                    if (parent == null) {
+                        parent = createJarFileObject(parentName, null);
+                        putFileToCache(parent);
+                        strongRef.add(parent);
+                        parent.holdObject(strongRef);
+                    }
+
+                    // Attach child to parent
+                    parent.attachChild(fileObj.getName());
+                }
+            }
+        } finally {
+            closeCommunicationLink();
+        }
+    }
+
+    /**
+     * @since 2.7.0
+     */
+    protected JarFile getJarFile() throws FileSystemException {
+        if (jarFile == null && this.file.exists()) {
+            this.jarFile = createJarFile(this.file);
+        }
+
+        return jarFile;
+    }
+
+    /**
+     * @since 2.7.0
+     */
+    protected JarFile createJarFile(final File file) throws FileSystemException {
         try {
             return new JarFile(file);
         } catch (final IOException ioe) {
@@ -60,24 +154,95 @@ public class JarFileSystem extends ZipFileSystem {
         }
     }
 
-    @Override
-    protected ZipFileObject createZipFileObject(final AbstractFileName name, final ZipEntry entry)
+    /**
+     * @since 2.7.0
+     */
+    protected JarFileObject createJarFileObject(final AbstractFileName name, final JarEntry entry)
             throws FileSystemException {
         return new JarFileObject(name, entry, this, true);
     }
 
     /**
+     * @since 2.7.0
+     */
+    @Override
+    protected void doCloseCommunicationLink() {
+        // Release the jar file
+        try {
+            if (jarFile != null) {
+                jarFile.close();
+                jarFile = null;
+            }
+        } catch (final IOException e) {
+            VfsLog.warn(getLogger(), LOG, "vfs.provider.jar/close-jar-file.error :" + file, e);
+        }
+    }
+
+    /**
      * Returns the capabilities of this file system.
+     * @since 2.7.0
      */
     @Override
     protected void addCapabilities(final Collection<Capability> caps) {
-        // super.addCapabilities(caps);
         caps.addAll(JarFileProvider.capabilities);
     }
 
+    /**
+     * Creates a file object.
+     * @since 2.7.0
+     */
+    @Override
+    protected FileObject createFile(final AbstractFileName name) throws FileSystemException {
+        // This is only called for files which do not exist in the Jar file
+        return new JarFileObject(name, null, this, false);
+    }
+
+    /**
+     * Adds a file object to the cache.
+     * @since 2.7.0
+     */
+    @Override
+    protected void putFileToCache(final FileObject file) {
+        cache.put(file.getName(), file);
+    }
+
+    /**
+     * @since 2.7.0
+     */
+    protected Charset getCharset() {
+        return charset;
+    }
+
+    /**
+     * Returns a cached file.
+     * @since 2.7.0
+     */
+    @Override
+    protected FileObject getFileFromCache(final FileName name) {
+        return cache.get(name);
+    }
+
+    /**
+     * remove a cached file.
+     * @since 2.7.0
+     */
+    @Override
+    protected void removeFileFromCache(final FileName name) {
+        cache.remove(name);
+    }
+
+    /**
+    * @since 2.7.0
+    */
+    @Override
+    public String toString() {
+        return super.toString() + " for " + file;
+    }
+
+
     Attributes getAttributes() throws IOException {
         if (attributes == null) {
-            final Manifest man = ((JarFile) getZipFile()).getManifest();
+            final Manifest man = getJarFile().getManifest();
             if (man == null) {
                 attributes = new Attributes(1);
             } else {
@@ -152,12 +317,6 @@ public class JarFileSystem extends ZipFileSystem {
     public Object getAttribute(final String attrName) throws FileSystemException {
         final Name name = lookupName(attrName);
         return getAttribute(name);
-    }
-
-    @Override
-    protected ZipFile getZipFile() throws FileSystemException {
-        // make accessible
-        return super.getZipFile();
     }
 
 }
