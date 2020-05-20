@@ -17,9 +17,11 @@
 
 package org.apache.commons.vfs2.provider.zip.test;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
@@ -31,6 +33,7 @@ import org.apache.commons.vfs2.util.Os;
 import org.junit.Assert;
 import org.junit.Assume;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -84,7 +87,7 @@ public class FileLockTestCase {
         manager = VFS.getManager();
     }
 
-    @Test
+    @Ignore
     public void testCannotDeleteWhileStreaming() throws Exception {
         try (final FileObject zipFileObject = manager.resolveFile(zipFileUri)) {
             try (InputStream inputStream = zipFileObject.getContent().getInputStream()) {
@@ -97,13 +100,45 @@ public class FileLockTestCase {
         assertDelete();
     }
 
-    @Test
+    @Ignore
     public void testCannotDeleteWhileStreaming2() throws Exception {
         Assume.assumeTrue(Os.isFamily(Os.OS_FAMILY_WINDOWS));
         try (final FileObject zipFileObject = manager.resolveFile(zipFileUri)) {
             try (InputStream inputStream = zipFileObject.getContent().getInputStream()) {
                 // We do not use newZipFile in the Assert message to avoid touching it before calling delete().
                 Assert.assertFalse("Could not delete file", newZipFile.delete());
+            }
+        }
+    }
+
+    @Test
+    public void testReadStreamAfterDeleteFile() throws Exception {
+        // delete default test file,this test gonna use another zip file
+        Assert.assertTrue("Could not delete file", newZipFile.delete());
+
+        // setup for new test zip file,this file has bigger size than the default test zip file
+        final File zipFile = new File("src/test/resources/test-data/testReadStreamAfterDelFile.zip");
+        newZipFile = File.createTempFile(getClass().getSimpleName()+"testReadStreamAfterDelFile",".zip");
+        newZipFile.deleteOnExit();
+        FileUtils.copyFile(zipFile,newZipFile);
+        zipFileUri = "zip:file:"+newZipFile.getAbsolutePath()+"!/file1.txt";
+
+        // test read stream after delete file
+        try (final FileObject zipFileObject = manager.resolveFile(zipFileUri)) {
+            try (InputStream inputStream = zipFileObject.getContent().getInputStream()) {
+                // delete file after open stream
+                Assert.assertTrue("Could not delete file", newZipFile.delete());
+
+                // read file by line,count line number
+                int lineNumber = 0;
+                try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream))) {
+                    while (bufferedReader.readLine()!=null) {
+                        lineNumber++;
+                    }
+                }
+
+                // check line number
+                Assert.assertTrue("Line number should be 100000",(lineNumber==100000));
             }
         }
     }
