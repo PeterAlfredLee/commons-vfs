@@ -18,6 +18,7 @@ package org.apache.commons.vfs2.provider.zip;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.Charset;
 import java.util.LinkedList;
 import java.util.Collection;
@@ -28,6 +29,7 @@ import java.util.Map;
 
 import org.apache.commons.compress.archivers.zip.ZipArchiveEntry;
 import org.apache.commons.compress.archivers.zip.ZipFile;
+import org.apache.commons.compress.archivers.zip.ZipSplitReadOnlySeekableByteChannel;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.commons.vfs2.Capability;
@@ -138,7 +140,8 @@ public class ZipFileSystem extends AbstractFileSystem {
 
     protected ZipFile createZipFile(final File file) throws FileSystemException {
         try {
-            return charset == null ? new ZipFile(file) : new ZipFile(file, charset.toString());
+            SeekableByteChannel channel = ZipSplitReadOnlySeekableByteChannel.buildFromLastSplitSegment(file);
+            return charset == null ? new ZipFile(channel) : new ZipFile(channel, charset.toString());
         } catch (final IOException ioe) {
             throw new FileSystemException("vfs.provider.zip/open-zip-file.error", file, ioe);
         }
