@@ -14,26 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.commons.vfs2.provider.http4.test;
+package org.apache.commons.vfs2.provider.https.test;
 
 import org.apache.commons.vfs2.FileSystemConfigBuilder;
+import org.apache.commons.vfs2.provider.http.HttpFileSystemConfigBuilder;
 import org.apache.commons.vfs2.provider.http.test.HttpGetContentInfoTest;
-import org.apache.commons.vfs2.provider.http4.Http4FileSystemConfigBuilder;
 
 /**
  * Tests VFS-427 NPE on HttpFileObject.getContent().getContentInfo()
  *
  * @since 2.1
  */
-public class Http4GetContentInfoTest extends HttpGetContentInfoTest {
+public class HttpsGetContentInfoTest extends HttpGetContentInfoTest {
 
     @Override
     public String getTestUri() {
-        return "http4://www.apache.org/licenses/LICENSE-2.0.txt";
+        return "https://www.apache.org/licenses/LICENSE-2.0.txt";
     }
 
     @Override
     public FileSystemConfigBuilder getConfigBuilder() {
-        return Http4FileSystemConfigBuilder.getInstance();
+        return HttpFileSystemConfigBuilder.getInstance();
     }
 }

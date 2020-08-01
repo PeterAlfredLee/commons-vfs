@@ -16,33 +16,25 @@
  */
 package org.apache.commons.vfs2.provider.http5.test;
 
-import org.apache.commons.vfs2.FileContent;
-import org.apache.commons.vfs2.FileObject;
-import org.apache.commons.vfs2.FileSystemException;
-import org.apache.commons.vfs2.FileSystemManager;
-import org.apache.commons.vfs2.VFS;
-import org.junit.Assert;
-import org.junit.Test;
-
-import junit.framework.TestCase;
+import org.apache.commons.vfs2.FileSystemConfigBuilder;
+import org.apache.commons.vfs2.provider.http.test.HttpGetContentInfoTest;
+import org.apache.commons.vfs2.provider.http5.Http5FileSystemConfigBuilder;
 
 /**
- * Tests VFS-427 NPE on Http5FileObject.getContent().getContentInfo().
+ * Tests VFS-427 NPE on HttpFileObject.getContent().getContentInfo()
+ *
+ * @since 2.1
  */
-public class Http5GetContentInfoTest extends TestCase {
+public class Http5GetContentInfoTest extends HttpGetContentInfoTest {
 
-    /**
-     * Tests VFS-427 NPE on Http5FileObject.getContent().getContentInfo().
-     *
-     * @throws FileSystemException thrown when the getContentInfo API fails.
-     */
-    @Test
-    public void testGetContentInfo() throws FileSystemException {
-        final FileSystemManager fsManager = VFS.getManager();
-        final FileObject fo = fsManager.resolveFile("http5://www.apache.org/licenses/LICENSE-2.0.txt");
-        final FileContent content = fo.getContent();
-        Assert.assertNotNull(content);
-        // Used to NPE before fix:
-        content.getContentInfo();
+    @Override
+    public String getTestUri() {
+        return "http5://www.apache.org/licenses/LICENSE-2.0.txt";
+    }
+
+    @Override
+    public FileSystemConfigBuilder getConfigBuilder() {
+        return Http5FileSystemConfigBuilder.getInstance();
     }
 }
+

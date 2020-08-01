@@ -16,59 +16,24 @@
  */
 package org.apache.commons.vfs2.provider.http5s.test;
 
-import java.net.MalformedURLException;
-import java.net.URL;
-
-import org.apache.commons.vfs2.FileContent;
-import org.apache.commons.vfs2.FileObject;
-import org.apache.commons.vfs2.FileSystemException;
-import org.apache.commons.vfs2.FileSystemManager;
-import org.apache.commons.vfs2.FileSystemOptions;
-import org.apache.commons.vfs2.VFS;
+import org.apache.commons.vfs2.FileSystemConfigBuilder;
+import org.apache.commons.vfs2.provider.http.test.HttpGetContentInfoTest;
 import org.apache.commons.vfs2.provider.http5.Http5FileSystemConfigBuilder;
-import org.junit.Assert;
-import org.junit.Test;
-
-import junit.framework.TestCase;
 
 /**
- * Tests VFS-427 NPE on Http5FileObject.getContent().getContentInfo()
+ * Tests VFS-427 NPE on HttpFileObject.getContent().getContentInfo()
+ *
+ * @since 2.1
  */
-public class Http5sGetContentInfoTest extends TestCase {
+public class Http5sGetContentInfoTest extends HttpGetContentInfoTest {
 
-    /**
-     * Tests VFS-427 NPE on Http5FileObject.getContent().getContentInfo().
-     *
-     * @throws FileSystemException thrown when the getContentInfo API fails.
-     * @throws MalformedURLException thrown when the System environment contains an invalid URL for an HTTPS proxy.
-     */
-    @Test
-    public void testGetContentInfo() throws FileSystemException, MalformedURLException {
-        String httpsProxyHost = null;
-        int httpsProxyPort = -1;
-        final String httpsProxy = System.getenv("https_proxy");
-        if (httpsProxy != null) {
-            final URL url = new URL(httpsProxy);
-            httpsProxyHost = url.getHost();
-            httpsProxyPort = url.getPort();
-        }
-        final FileSystemOptions opts;
-        if (httpsProxyHost != null) {
-            opts = new FileSystemOptions();
-            final Http5FileSystemConfigBuilder builder = Http5FileSystemConfigBuilder.getInstance();
-            builder.setProxyHost(opts, httpsProxyHost);
-            if (httpsProxyPort >= 0) {
-                builder.setProxyPort(opts, httpsProxyPort);
-            }
-        } else {
-            opts = null;
-        }
+    @Override
+    public String getTestUri() {
+        return "http5s://www.apache.org/licenses/LICENSE-2.0.txt";
+    }
 
-        final FileSystemManager fsManager = VFS.getManager();
-        final FileObject fo = fsManager.resolveFile("http5://www.apache.org/licenses/LICENSE-2.0.txt", opts);
-        final FileContent content = fo.getContent();
-        Assert.assertNotNull(content);
-        // Used to NPE before fix:
-        content.getContentInfo();
+    @Override
+    public FileSystemConfigBuilder getConfigBuilder() {
+        return Http5FileSystemConfigBuilder.getInstance();
     }
 }
